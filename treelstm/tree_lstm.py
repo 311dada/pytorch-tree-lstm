@@ -45,16 +45,13 @@ class TreeLSTM(torch.nn.Module):
         h = torch.zeros(batch_size, self.out_features, device=device)
         c = torch.zeros(batch_size, self.out_features, device=device)
 
-        # h_sum storage buffer
-        h_sum = torch.zeros(batch_size, self.out_features, device=device)
-
         # populate the h and c states respecting computation order
         for n in range(node_order.max() + 1):
-            self._run_lstm(n, h, c, h_sum, features, node_order, adjacency_list, edge_order)
+            self._run_lstm(n, h, c, features, node_order, adjacency_list, edge_order)
 
         return h, c
 
-    def _run_lstm(self, iteration, h, c, h_sum, features, node_order, adjacency_list, edge_order):
+    def _run_lstm(self, iteration, h, c, features, node_order, adjacency_list, edge_order):
         '''Helper function to evaluate all tree nodes currently able to be evaluated.
         '''
         # N is the number of nodes in the tree
@@ -80,7 +77,9 @@ class TreeLSTM(torch.nn.Module):
         # At iteration 0 none of the nodes should have children
         # Otherwise, select the child nodes needed for current iteration
         # and sum over their hidden states
-        if iteration > 0:
+        if iteration == 0:
+            iou = self.W_iou(x)
+        else:
             # adjacency_list is a tensor of size e x 2
             adjacency_list = adjacency_list[edge_mask, :]
 
@@ -95,22 +94,27 @@ class TreeLSTM(torch.nn.Module):
             child_c = c[child_indexes, :]
 
             # Add child hidden states to parent offset locations
-            for pindex, cindex in zip(parent_indexes, child_indexes):
-                h_sum[pindex, :] += h[cindex, :]
+            _, child_counts = torch.unique_consecutive(parent_indexes, return_counts=True)
+            child_counts = tuple(child_counts)
+
+            parent_children = torch.split(child_h, child_counts)
+            parent_list = [item.sum(0) for item in parent_children]
+
+            h_sum = torch.stack(parent_list)
+            iou = self.W_iou(x) + self.U_iou(h_sum)
 
         # i, o and u are tensors of size n x M
-        iou = self.W_iou(x) + self.U_iou(h_sum[node_mask, :])
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
         i = torch.sigmoid(i)
         o = torch.sigmoid(o)
         u = torch.tanh(u)
 
-        c[node_mask, :] = i * u
-
         # At iteration 0 none of the nodes should have children
         # Otherwise, calculate the forget states for each parent node and child node
         # and sum over the child memory cell states
-        if iteration > 0:
+        if iteration == 0:
+            c[node_mask, :] = i * u
+        else:
             # f is a tensor of size e x M
             f = self.W_f(features[parent_indexes, :]) + self.U_f(child_h)
             f = torch.sigmoid(f)
@@ -119,7 +123,10 @@ class TreeLSTM(torch.nn.Module):
             fc = f * child_c
 
             # Add the calculated f values to the parent's memory cell state
-            for cindex, pindex in enumerate(parent_indexes):
-                c[pindex, :] += fc[cindex, :]
+            parent_children = torch.split(fc, child_counts)
+            parent_list = [item.sum(0) for item in parent_children]
+
+            c_sum = torch.stack(parent_list)
+            c[node_mask, :] = i * u + c_sum
 
         h[node_mask, :] = o * torch.tanh(c[node_mask])
