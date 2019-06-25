@@ -47,6 +47,7 @@ def convert_tree_to_tensors(tree, device=torch.device('cpu')):
 
 
 if __name__ == '__main__':
+    torch.autograd.set_detect_anomaly(True)
     # Toy example
     tree = {
         'features': [1, 0], 'labels': [1], 'children': [
@@ -77,7 +78,9 @@ if __name__ == '__main__':
         labels = data['labels']
 
         loss = loss_function(h, labels)
+        print('This is before the loss')
         loss.backward()
+        print('This is after the loss')
         optimizer.step()
 
         print(f'Iteration {n+1} Loss: {loss}')

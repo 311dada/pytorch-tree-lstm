@@ -46,12 +46,16 @@ class TreeLSTM(torch.nn.Module):
         c = torch.zeros(batch_size, self.out_features, device=device)
 
         # populate the h and c states respecting computation order
+        print(f'node_order: {node_order}')
         for n in range(node_order.max() + 1):
             self._run_lstm(n, h, c, features, node_order, adjacency_list, edge_order)
 
         return h, c
 
     def _run_lstm(self, iteration, h, c, features, node_order, adjacency_list, edge_order):
+        print(f'iteration: {iteration}')
+        print(f'h: {h}')
+        print(f'c: {c}')
         '''Helper function to evaluate all tree nodes currently able to be evaluated.
         '''
         # N is the number of nodes in the tree
