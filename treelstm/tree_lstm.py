@@ -5,6 +5,7 @@ See Tai et al. 2015 https://arxiv.org/abs/1503.00075 for model description.
 """
 
 import torch
+import numpy as np
 
 
 class TreeLSTM(torch.nn.Module):
@@ -47,6 +48,7 @@ class TreeLSTM(torch.nn.Module):
 
         # populate the h and c states respecting computation order
         # print(f'node_order: {node_order}')
+        # import pdb; pdb.set_trace()
         for n in range(node_order.max() + 1):
             self._run_lstm(n, h, c, features, node_order, adjacency_list, edge_order)
 
@@ -94,8 +96,20 @@ class TreeLSTM(torch.nn.Module):
             child_indexes = adjacency_list[:, 1]
 
             # child_h and child_c are tensors of size e x 1
-            child_h = h[child_indexes, :]
-            child_c = c[child_indexes, :]
+            # import ipdb; ipdb.set_trace()
+            # child_h = h[child_indexes, :]
+            # child_c = c[child_indexes, :]
+            child_mask = np.zeros(h.shape)
+            child_mask[child_indexes, :] = 1
+            h_child_mask = torch.tensor(child_mask, dtype=torch.float)
+            c_child_mask = torch.tensor(child_mask, dtype=torch.float)
+
+            child_h = h * h_child_mask
+            child_c = c * c_child_mask
+            child_h = child_h[child_h.nonzero()[:, 0].unique()]
+            child_c = child_c[child_c.nonzero()[:, 0].unique()]
+            print(child_h)
+            print(child_c)
 
             # Add child hidden states to parent offset locations
             _, child_counts = torch.unique_consecutive(parent_indexes, return_counts=True)
@@ -132,5 +146,8 @@ class TreeLSTM(torch.nn.Module):
 
             c_sum = torch.stack(parent_list)
             c[node_mask, :] = i * u + c_sum
+
+        # print(f'c[node_mask]= {c[node_mask]} and shape: {c[node_mask].shape}')
+        # print(f'c[node_mask, :]= {c[node_mask, :]} and shape: {c[node_mask,:].shape}')
 
         h[node_mask, :] = o * torch.tanh(c[node_mask, :])
